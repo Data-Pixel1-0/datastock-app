@@ -30,14 +30,9 @@ class _ProductosScreenState extends State<ProductosScreen> {
       if (!mounted) return;
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
         setState(() {
           _productos.clear();
-          if (data is List) {
-            _productos.addAll(List<Map<String, dynamic>>.from(
-              data.map((item) => Map<String, dynamic>.from(item as Map)),
-            ));
-          }
+          _productos.addAll(_leerProductos(response.body));
           _cargando = false;
         });
       } else {
@@ -59,6 +54,15 @@ class _ProductosScreenState extends State<ProductosScreen> {
     return 'DS-${DateTime.now().microsecondsSinceEpoch}';
   }
 
+  List<Map<String, dynamic>> _leerProductos(String body) {
+    final data = jsonDecode(body);
+    if (data is! List) return [];
+
+    return data.whereType<Map>().map((item) {
+      return Map<String, dynamic>.from(item);
+    }).toList();
+  }
+
   int _stockProducto(Map<String, dynamic>? producto) {
     if (producto == null) return 0;
     return int.tryParse(
@@ -70,7 +74,31 @@ class _ProductosScreenState extends State<ProductosScreen> {
   String _codigoProducto(Map<String, dynamic> producto) {
     final codigo = producto['codigo']?.toString().trim();
     if (codigo != null && codigo.isNotEmpty) return codigo;
-    return producto['id']?.toString() ?? 'Sin codigo';
+    final id = _idProducto(producto);
+    return id.isNotEmpty ? id : 'Sin codigo';
+  }
+
+  String _idProducto(Map<String, dynamic> producto) {
+    const posiblesIds = ['id', '_id', 'id_producto', 'producto_id'];
+    for (final campo in posiblesIds) {
+      final id = producto[campo]?.toString().trim();
+      if (id != null && id.isNotEmpty && id != 'null') return id;
+    }
+    return '';
+  }
+
+  Widget _buildQrCode(String data, double size) {
+    final qrData = data.trim().isEmpty ? 'Sin codigo' : data.trim();
+
+    return SizedBox.square(
+      dimension: size,
+      child: QrImageView(
+        data: qrData,
+        version: QrVersions.auto,
+        backgroundColor: Colors.white,
+        padding: EdgeInsets.zero,
+      ),
+    );
   }
 
   void _mostrarQrProducto(Map<String, dynamic> producto) {
@@ -95,12 +123,7 @@ class _ProductosScreenState extends State<ProductosScreen> {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              child: QrImageView(
-                data: codigo,
-                version: QrVersions.auto,
-                size: 210,
-                backgroundColor: Colors.white,
-              ),
+              child: _buildQrCode(codigo, 210),
             ),
             const SizedBox(height: 12),
             SelectableText(
@@ -122,6 +145,7 @@ class _ProductosScreenState extends State<ProductosScreen> {
 
   Future<void> _mostrarFormularioProducto({Map<String, dynamic>? producto}) async {
     final formKey = GlobalKey<FormState>();
+    final productoId = producto == null ? '' : _idProducto(producto);
     String nombre = producto?['nombre']?.toString() ?? '';
     String categoria = producto?['categoria']?.toString() ?? '';
     String codigo = producto == null ? _generarCodigoProducto() : _codigoProducto(producto);
@@ -211,12 +235,7 @@ class _ProductosScreenState extends State<ProductosScreen> {
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
-                    child: QrImageView(
-                      data: codigo,
-                      version: QrVersions.auto,
-                      size: 150,
-                      backgroundColor: Colors.white,
-                    ),
+                    child: _buildQrCode(codigo, 150),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -255,6 +274,10 @@ class _ProductosScreenState extends State<ProductosScreen> {
 
                 bool exito = false;
                 try {
+                  if (producto != null && productoId.isEmpty) {
+                    throw Exception('Este producto no tiene ID para editarlo.');
+                  }
+
                   final response = producto == null
                       ? await http.post(
                           Uri.parse(ApiConfig.productosUrl),
@@ -262,7 +285,7 @@ class _ProductosScreenState extends State<ProductosScreen> {
                           body: jsonEncode(datosProducto),
                         )
                       : await http.put(
-                          Uri.parse('${ApiConfig.productosUrl}/${producto['id']}'),
+                          Uri.parse('${ApiConfig.productosUrl}/$productoId'),
                           headers: {'Content-Type': 'application/json'},
                           body: jsonEncode(datosProducto),
                         );
@@ -307,7 +330,7 @@ class _ProductosScreenState extends State<ProductosScreen> {
 
   Future<void> _eliminarProducto(Map<String, dynamic> producto) async {
     final nombre = producto['nombre']?.toString() ?? 'este producto';
-    final id = producto['id']?.toString() ?? '';
+    final id = _idProducto(producto);
 
     final confirmar = await showDialog<bool>(
       context: context,
@@ -326,6 +349,14 @@ class _ProductosScreenState extends State<ProductosScreen> {
     );
 
     if (confirmar != true) return;
+
+    if (id.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Este producto no tiene ID para eliminarlo.')),
+      );
+      return;
+    }
 
     try {
       final response = await http.delete(Uri.parse('${ApiConfig.productosUrl}/$id'));

@@ -104,15 +104,19 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 
   String _codigoProducto(Map<String, dynamic> producto) {
-    return producto['codigo']?.toString().trim().isNotEmpty == true
-        ? producto['codigo'].toString().trim()
-        : producto['id']?.toString() ?? 'Sin codigo';
+    final codigo = producto['codigo']?.toString().trim();
+    if (codigo != null && codigo.isNotEmpty) return codigo;
+    final id = _idProducto(producto);
+    return id.isNotEmpty ? id : 'Sin codigo';
   }
 
   String _idProducto(Map<String, dynamic> producto) {
-    final id = producto['id']?.toString().trim();
-    if (id != null && id.isNotEmpty) return id;
-    return _codigoProducto(producto);
+    const posiblesIds = ['id', '_id', 'id_producto', 'producto_id'];
+    for (final campo in posiblesIds) {
+      final id = producto[campo]?.toString().trim();
+      if (id != null && id.isNotEmpty && id != 'null') return id;
+    }
+    return '';
   }
 
   String _moneda(double valor) {
@@ -158,6 +162,8 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
       if (producto == null) {
         final guardado = await _mostrarFormularioProducto(codigo);
+        if (!mounted) return null;
+
         if (guardado == true) {
           setState(
             () =>
@@ -237,6 +243,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
         mensaje: '$cantidadAgregar de $nombre agregado a la venta.',
       );
     } catch (e) {
+      if (!mounted) return null;
       setState(() => _estado = 'No se pudo procesar el escaneo');
       return _ResultadoEscaneo(
         exito: false,
@@ -346,9 +353,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
     final data = jsonDecode(body);
     if (data is! List) return [];
 
-    return List<Map<String, dynamic>>.from(
-      data.map((item) => Map<String, dynamic>.from(item as Map)),
-    );
+    return data.whereType<Map>().map((item) {
+      return Map<String, dynamic>.from(item);
+    }).toList();
   }
 
   Future<void> _finalizarVenta() async {
@@ -387,6 +394,12 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
     try {
       for (final item in vendidos) {
+        if (item.id.trim().isEmpty) {
+          throw Exception(
+            'El producto ${item.nombre} no tiene ID para actualizar stock.',
+          );
+        }
+
         final nuevoStock = item.stockActual - item.cantidad;
         final response = await http.put(
           Uri.parse('${ApiConfig.productosUrl}/${item.id}'),

@@ -507,7 +507,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
           if (bajos.isEmpty)
             const _EmptyReport(
               icono: Icons.check_circle_outline,
-              titulo: 'Todo Melo',
+              titulo: 'Todo Bien',
               mensaje: 'No hay productos en baja unidad.',
             )
           else
